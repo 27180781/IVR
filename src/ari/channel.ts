@@ -1,4 +1,4 @@
-import type { Channel, Client, DtmfEvent, Playback } from 'ari-client';
+import type { Channel, Client, DtmfEvent, Playback, PlaybackEvent } from 'ari-client';
 import type { CallLogger } from '../logger.js';
 
 export type PlayOutcome = 'finished' | 'interrupted' | 'hangup';
@@ -97,7 +97,20 @@ export class CallChannel {
 
       const playback: Playback = this.ari.Playback();
 
-      const onFinished = () => finish('finished');
+      // Asterisk emits PlaybackFinished even when the file could not be
+      // opened, so "finished" alone does not mean the caller heard anything.
+      // A missing or misnamed sound file is otherwise completely silent - the
+      // caller gets dead air and the flow marches on. Say it loudly.
+      const onFinished = (event: PlaybackEvent) => {
+        const state = event?.playback?.state;
+        if (state && state !== 'done') {
+          this.log.error(
+            { media, state },
+            'playback did not complete - check that the sound file exists for this language',
+          );
+        }
+        finish('finished');
+      };
       playback.once('PlaybackFinished', onFinished);
       cleanupFns.push(() => playback.removeListener('PlaybackFinished', onFinished));
 

@@ -35,6 +35,8 @@ declare module 'ari-client' {
 
   export interface Playback extends EventEmitter {
     id: string;
+    /** 'queued' | 'playing' | 'continuing' | 'done' | 'failed' */
+    state?: string;
     stop(): Promise<void>;
   }
 

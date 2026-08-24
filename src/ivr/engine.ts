@@ -7,6 +7,18 @@ import type { CallContext, Flow, Speech, State, Utterance } from './flow.js';
 const MAX_TRANSITIONS = 200;
 const DEFAULT_MAX_ATTEMPTS = 3;
 
+/**
+ * What a single state did: move on, or end the call.
+ *
+ * The reason is stated explicitly rather than inferred from the channel's
+ * state afterwards. Inferring it is a race - by the time a `hangup` state has
+ * finished, StasisEnd may or may not have been processed yet, so the very same
+ * path reports "completed" on one call and "caller-hangup" on the next.
+ */
+type StepResult =
+  | { kind: 'next'; id: string }
+  | { kind: 'end'; reason: 'completed' | 'caller-hangup' };
+
 export interface CallOutcome {
   endedAt: number;
   lastState: string;
@@ -67,9 +79,9 @@ export class IvrEngine {
         path.push(stateId);
         call.log.info({ state: stateId, type: state.type }, 'entering state');
 
-        const next = await this.runState(state, call, ctx);
-        if (next === null) return outcome(call.hungUp ? 'caller-hangup' : 'completed');
-        stateId = next;
+        const step = await this.runState(state, call, ctx);
+        if (step.kind === 'end') return outcome(step.reason);
+        stateId = step.id;
       }
     } catch (err) {
       call.log.error({ err, state: stateId }, 'unhandled error in flow');
@@ -77,14 +89,16 @@ export class IvrEngine {
     }
   }
 
-  /** Returns the next state id, or null when the call is finished. */
-  private async runState(state: State, call: CallChannel, ctx: CallContext): Promise<string | null> {
+  private async runState(state: State, call: CallChannel, ctx: CallContext): Promise<StepResult> {
+    const goto = (id: string): StepResult => ({ kind: 'next', id });
+    const hungUp: StepResult = { kind: 'end', reason: 'caller-hangup' };
+
     switch (state.type) {
       case 'play': {
         const outcome = await call.play(this.resolve(state.speech, ctx), {
           bargeIn: state.bargeIn ?? false,
         });
-        return outcome === 'hangup' ? null : state.next;
+        return outcome === 'hangup' ? hungUp : goto(state.next);
       }
 
       case 'menu': {
@@ -98,10 +112,10 @@ export class IvrEngine {
             firstDigitTimeoutMs: state.firstDigitTimeoutMs ?? 5000,
           });
 
-          if (result.reason === 'hangup') return null;
+          if (result.reason === 'hangup') return hungUp;
 
           const target = state.choices[result.digits];
-          if (target) return target;
+          if (target) return goto(target);
 
           const retry = result.reason === 'timeout' ? state.onTimeout : state.onInvalid;
           call.log.info(
@@ -109,10 +123,10 @@ export class IvrEngine {
             'menu input not accepted',
           );
           if (retry && attempt < maxAttempts) {
-            if ((await call.play(this.resolve(retry, ctx))) === 'hangup') return null;
+            if ((await call.play(this.resolve(retry, ctx))) === 'hangup') return hungUp;
           }
         }
-        return state.onExhausted;
+        return goto(state.onExhausted);
       }
 
       case 'collect': {
@@ -127,7 +141,7 @@ export class IvrEngine {
             interDigitTimeoutMs: state.interDigitTimeoutMs ?? 3000,
           });
 
-          if (result.reason === 'hangup') return null;
+          if (result.reason === 'hangup') return hungUp;
 
           const valid =
             result.digits.length >= state.minDigits &&
@@ -136,32 +150,34 @@ export class IvrEngine {
 
           if (valid) {
             ctx.vars[state.variable] = result.digits;
-            return state.next;
+            return goto(state.next);
           }
 
           call.log.info({ attempt, digits: result.digits }, 'collected input rejected');
           if (state.onInvalid && attempt < maxAttempts) {
-            if ((await call.play(this.resolve(state.onInvalid, ctx))) === 'hangup') return null;
+            if ((await call.play(this.resolve(state.onInvalid, ctx))) === 'hangup') return hungUp;
           }
         }
-        return state.onExhausted;
+        return goto(state.onExhausted);
       }
 
       case 'action': {
         try {
           const result = await state.run(ctx);
           if (result.vars) Object.assign(ctx.vars, result.vars);
-          return result.next;
+          return goto(result.next);
         } catch (err) {
           call.log.error({ err, state: state.id }, 'action failed');
-          return state.onError;
+          return goto(state.onError);
         }
       }
 
       case 'hangup': {
         if (state.speech) await call.play(this.resolve(state.speech, ctx));
         await call.hangup();
-        return null;
+        // Reaching a hangup state means the flow ran to its end, whether or
+        // not the caller stayed on the line for the goodbye.
+        return { kind: 'end', reason: 'completed' };
       }
     }
   }

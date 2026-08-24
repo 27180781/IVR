@@ -36,6 +36,16 @@ fi
 
 echo
 echo "ARI"
+if asterisk -rx 'module show like res_ari.so' 2>/dev/null | grep -q 'Running'; then
+  pass "res_ari is running"
+elif asterisk -rx 'module show like res_ari.so' 2>/dev/null | grep -q 'Not Running'; then
+  fail "res_ari declined to load"
+  echo "      Usually ari.conf is unreadable by the asterisk user."
+  echo "      Check:  ls -l /etc/asterisk/ari.conf   (want root:asterisk 640)"
+  echo "      Then:   sudo asterisk -rx 'module load res_ari.so'"
+else
+  fail "res_ari not present - is asterisk-modules installed?"
+fi
 if asterisk -rx 'ari show status' 2>/dev/null | grep -qi 'enabled'; then
   pass "ARI enabled"
 else
@@ -55,10 +65,25 @@ fi
 
 echo
 echo "Sound files"
-if [[ -d /var/lib/asterisk/sounds/he/ivr ]]; then
-  pass "$(find /var/lib/asterisk/sounds/he/ivr -type f | wc -l) file(s) in /var/lib/asterisk/sounds/he/ivr"
+# Asterisk resolves sounds under astdatadir, which is /usr/share/asterisk on
+# Debian and Ubuntu - NOT /var/lib/asterisk. Putting them in the wrong place
+# fails silently: the call connects and the caller hears nothing at all.
+DATA_DIR=$(sed -n 's/^[[:space:]]*astdatadir[[:space:]]*=>[[:space:]]*\(.*\)/\1/p' \
+  /etc/asterisk/asterisk.conf 2>/dev/null | head -1)
+DATA_DIR="${DATA_DIR:-/usr/share/asterisk}"
+SOUND_DIR="${DATA_DIR}/sounds/${IVR_LANGUAGE:-he}"
+echo "    resolved sounds directory: ${SOUND_DIR}"
+
+if [[ -d "${SOUND_DIR}/ivr" ]]; then
+  pass "$(find "${SOUND_DIR}/ivr" -type f | wc -l) prompt file(s) in ${SOUND_DIR}/ivr"
 else
-  fail "/var/lib/asterisk/sounds/he/ivr does not exist - run 'npm run prompts:list'"
+  fail "${SOUND_DIR}/ivr does not exist - run 'npm run prompts:list'"
+fi
+
+if [[ -d "${SOUND_DIR}/digits" ]]; then
+  pass "$(find "${SOUND_DIR}/digits" -type f | wc -l) digit file(s) in ${SOUND_DIR}/digits"
+else
+  fail "${SOUND_DIR}/digits missing - numbers will not be read out"
 fi
 
 echo

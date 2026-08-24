@@ -83,5 +83,5 @@ pjsip set logger on
 | מגיע INVITE אבל נדחה 401/403 | ה-IP של טוויליו לא ברשימת ה-`identify` |
 | השיחה נענית, אין אודיו בכלל | `external_media_address` לא מוגדר ל-IP הציבורי |
 | אודיו בכיוון אחד | פורטי RTP (10000-20000/UDP) חסומים בחומת אש או ב-Security Group |
-| ההודעות לא מתנגנות, השיחה שותקת | קבצי הקול חסרים תחת `/var/lib/asterisk/sounds/he/ivr/` |
+| ההודעות לא מתנגנות, השיחה שותקת | קבצי הקול חסרים, או הונחו תחת `/var/lib/asterisk/sounds` במקום `/usr/share/asterisk/sounds` |
 | DTMF לא נקלט | `dtmf_mode` שונה מ-`rfc4733` |

@@ -18,8 +18,13 @@ const engine = new IvrEngine(flow, speech);
 async function handleCall(ari: Client, channel: Channel, args: string[]): Promise<void> {
   // Arguments come from Stasis(ivr-app,${EXTEN},${CALLERID(num)}) in the
   // dialplan; fall back to the channel's own caller id if they are missing.
-  const to = args[0] ?? channel.dialplan.exten ?? 'unknown';
-  const from = args[1] ?? channel.caller.number ?? 'anonymous';
+  // ${CALLERID(num)} expands to an empty string when the caller withholds
+  // their number, and "" is not null - ?? would happily keep it.
+  const firstOf = (...values: Array<string | undefined>) =>
+    values.find((v) => v !== undefined && v !== '') ?? 'unknown';
+
+  const to = firstOf(args[0], channel.dialplan?.exten);
+  const from = firstOf(args[1], channel.caller?.number, 'anonymous');
 
   const ctx: CallContext = {
     callId: channel.id,

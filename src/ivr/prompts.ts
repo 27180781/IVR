@@ -3,7 +3,7 @@
  *
  * `file` is the path Asterisk resolves RELATIVE to the language directory:
  * playing "ivr/welcome" on a channel whose language is `he` loads
- *   /var/lib/asterisk/sounds/he/ivr/welcome.<ext>
+ *   /usr/share/asterisk/sounds/he/ivr/welcome.<ext>
  *
  * `text` is the Hebrew script for the recording. It is the single source of
  * truth for what has to be recorded - `npm run prompts:list` prints it as a

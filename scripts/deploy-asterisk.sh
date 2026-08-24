@@ -38,16 +38,33 @@ render() {
     "$1"
 }
 
+# Asterisk drops privileges to its own user, so it must be able to READ these
+# files - but nothing else should. Owner root keeps the config out of reach of
+# the service account itself; group asterisk lets the daemon read it.
+# Getting this wrong is quiet: Asterisk logs "Unable to load config file
+# 'ari.conf'" and every ARI module then declines to load.
+ASTERISK_USER="${ASTERISK_USER:-root}"
+ASTERISK_GROUP="${ASTERISK_GROUP:-asterisk}"
+
+if ! getent group "${ASTERISK_GROUP}" >/dev/null; then
+  echo "error: group '${ASTERISK_GROUP}' does not exist. Is Asterisk installed?" >&2
+  echo "       override with ASTERISK_GROUP=<group> ./scripts/deploy-asterisk.sh" >&2
+  exit 1
+fi
+
 for file in pjsip.conf extensions.conf http.conf ari.conf rtp.conf logger.conf; do
   src="${SRC_DIR}/${file}"
   dst="${DST_DIR}/${file}"
   [[ -f "${dst}" ]] && cp -a "${dst}" "${BACKUP_DIR}/${file}"
   render "${src}" > "${dst}"
-  chown root:root "${dst}"
-  # ari.conf holds a password; keep it off other users' eyes.
-  if [[ "${file}" == "ari.conf" ]]; then chmod 640 "${dst}"; else chmod 644 "${dst}"; fi
+  chown "${ASTERISK_USER}:${ASTERISK_GROUP}" "${dst}"
+  # 640 throughout: ari.conf carries the ARI password and pjsip.conf can carry
+  # trunk credentials. Neither belongs in a world-readable file.
+  chmod 640 "${dst}"
   echo "installed ${dst}"
 done
+
+chmod 700 "${BACKUP_DIR}"
 
 echo "previous config backed up to ${BACKUP_DIR}"
 
@@ -55,8 +72,17 @@ if command -v asterisk >/dev/null 2>&1 && asterisk -rx 'core show version' >/dev
   # A targeted reload avoids dropping calls that are in progress.
   asterisk -rx 'module reload res_pjsip.so'
   asterisk -rx 'dialplan reload'
-  asterisk -rx 'module reload res_ari.so'
   asterisk -rx 'module reload res_rtp_asterisk.so'
+
+  # A module that declined to load at startup cannot be reloaded - it has to be
+  # loaded. That is the state Asterisk lands in when ari.conf was unreadable,
+  # which is exactly what this script may have just fixed.
+  if asterisk -rx 'module show like res_ari.so' | grep -q 'Not Running'; then
+    echo "res_ari was not running, loading it"
+    asterisk -rx 'module load res_ari.so'
+  else
+    asterisk -rx 'module reload res_ari.so'
+  fi
   echo "asterisk reloaded"
 else
   echo "asterisk is not running - start it with: systemctl start asterisk"
