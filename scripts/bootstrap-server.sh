@@ -45,6 +45,24 @@ HAS_SYSTEMD=0
 [[ -d /run/systemd/system ]] && HAS_SYSTEMD=1
 (( HAS_SYSTEMD )) || warn "systemd is not running - services will be configured but not started"
 
+# Every step below assumes these exist. On a minimal image some do not, and the
+# failure would land somewhere confusing - metadata lookup, or the NodeSource
+# installer - rather than here where the cause is obvious.
+info "refreshing package lists"
+apt-get update -qq
+MISSING=()
+for tool in curl ca-certificates gnupg git openssl; do
+  command -v "${tool}" >/dev/null || MISSING+=("${tool}")
+done
+# add-apt-repository lives here and is needed to enable universe on Ubuntu.
+[[ "${ID}" == "ubuntu" ]] && ! command -v add-apt-repository >/dev/null \
+  && MISSING+=(software-properties-common)
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  info "installing prerequisites: ${MISSING[*]}"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${MISSING[@]}" >/dev/null
+fi
+
 #-----------------------------------------------------------------------------
 step "Determining the public IP"
 #-----------------------------------------------------------------------------
@@ -74,7 +92,6 @@ step "Firewall"
 if (( SKIP_FIREWALL )); then
   info "skipped (--skip-firewall)"
 else
-  apt-get update -qq
   apt-get install -y -qq ufw >/dev/null
   ufw --force default deny incoming >/dev/null
   ufw --force default allow outgoing >/dev/null

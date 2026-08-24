@@ -15,7 +15,11 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    # main does not exist yet - the work lives on the feature branch. Once it
+    # is merged, drop the second entry.
+    branches:
+      - main
+      - claude/advanced-ivr-system-fg16oc
   workflow_dispatch:
 
 concurrency:
