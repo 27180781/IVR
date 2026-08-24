@@ -16,11 +16,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICE_USER="ivr"
 NODE_MAJOR=22
 PUBLIC_IP=""
+PUBLIC_IP_EXPLICIT=0
 SKIP_FIREWALL=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --public-ip) PUBLIC_IP="$2"; shift 2 ;;
+    --public-ip) PUBLIC_IP="$2"; PUBLIC_IP_EXPLICIT=1; shift 2 ;;
     --skip-firewall) SKIP_FIREWALL=1; shift ;;
     -h|--help) sed -n '2,14p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
@@ -111,6 +112,16 @@ fi
 info "public IP: ${PUBLIC_IP}"
 info "this address goes into the Twilio Origination URI"
 
+if (( PUBLIC_IP_EXPLICIT )); then
+  DETECTED="$(curl -s --max-time 3 \
+    http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address 2>/dev/null || true)"
+  if [[ "${DETECTED}" =~ ^[0-9.]+$ && "${DETECTED}" != "${PUBLIC_IP}" ]]; then
+    warn "you passed ${PUBLIC_IP}, but this host reports ${DETECTED}."
+    warn "that is correct for a Reserved IP, and wrong for anything else -"
+    warn "an address from a different server means Twilio's calls go nowhere."
+  fi
+fi
+
 case "${PUBLIC_IP}" in
   10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
     warn "that looks like a private address."
@@ -161,11 +172,21 @@ fi
 # "Asterisk is installed" is not the bar. Without the ARI modules on disk there
 # is no interface for the application to attach to, and every later step would
 # succeed while the system as a whole could never answer a call.
-if ! ls /usr/lib/asterisk/modules/res_ari.so >/dev/null 2>&1; then
-  die "this Asterisk build has no res_ari.so - ARI is unavailable on ${PRETTY_NAME}.
-       Rebuild the server on Ubuntu 24.04 LTS."
+# The module directory is architecture-specific on Debian and Ubuntu
+# (/usr/lib/x86_64-linux-gnu/asterisk/modules), so ask Asterisk where it is
+# rather than guessing - a wrong guess here would reject a perfectly good host.
+MOD_DIR="$(sed -n 's/^[[:space:]]*astmoddir[[:space:]]*=>[[:space:]]*\(.*\)/\1/p' \
+  /etc/asterisk/asterisk.conf 2>/dev/null | head -1)"
+if [[ -z "${MOD_DIR}" || ! -d "${MOD_DIR}" ]]; then
+  MOD_DIR="$(dirname "$(find /usr/lib -name res_pjsip.so -print -quit 2>/dev/null)" 2>/dev/null)"
 fi
-info "ARI modules present"
+
+if [[ -z "${MOD_DIR}" ]] || ! ls "${MOD_DIR}/res_ari.so" >/dev/null 2>&1; then
+  die "this Asterisk build has no res_ari.so - ARI is unavailable on ${PRETTY_NAME}.
+       ARI is the only interface between Asterisk and this application, so the
+       system cannot work without it. Rebuild the server on Ubuntu 24.04 LTS."
+fi
+info "ARI modules present in ${MOD_DIR}"
 
 #-----------------------------------------------------------------------------
 step "Installing Node.js"
@@ -186,8 +207,24 @@ ASTERISK_ENV="${REPO_ROOT}/asterisk/asterisk.env"
 APP_ENV="${REPO_ROOT}/.env"
 
 if [[ -f "${ASTERISK_ENV}" ]]; then
-  info "asterisk/asterisk.env exists, leaving it alone"
+  info "asterisk/asterisk.env exists, keeping its ARI password"
   ARI_PASSWORD="$(grep -E '^ARI_PASSWORD=' "${ASTERISK_ENV}" | cut -d= -f2-)"
+
+  # The address is the one field worth re-checking. Leaving a stale value in
+  # place produces an Asterisk that advertises some other machine's IP - calls
+  # connect and then fail with no audio, and nothing in the logs points here.
+  EXISTING_IP="$(grep -E '^PUBLIC_IP=' "${ASTERISK_ENV}" | cut -d= -f2- || true)"
+  if [[ -n "${EXISTING_IP}" && "${EXISTING_IP}" != "${PUBLIC_IP}" ]]; then
+    if (( PUBLIC_IP_EXPLICIT )); then
+      sed -i "s|^PUBLIC_IP=.*|PUBLIC_IP=${PUBLIC_IP}|" "${ASTERISK_ENV}"
+      info "updated PUBLIC_IP: ${EXISTING_IP} -> ${PUBLIC_IP}"
+    else
+      warn "asterisk.env says PUBLIC_IP=${EXISTING_IP}, but this host is ${PUBLIC_IP}"
+      warn "leaving it as-is. To change it:"
+      warn "  sed -i 's|^PUBLIC_IP=.*|PUBLIC_IP=${PUBLIC_IP}|' asterisk/asterisk.env"
+      warn "  ./scripts/deploy-asterisk.sh"
+    fi
+  fi
 else
   ARI_PASSWORD="$(openssl rand -hex 24)"
   cat > "${ASTERISK_ENV}" <<EOF
