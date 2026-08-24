@@ -21,6 +21,12 @@ EnvironmentFile=/opt/ivr/.env
 ExecStart=/usr/bin/node dist/index.js
 Restart=always
 RestartSec=3
+
+# The app drains calls in progress before exiting (SHUTDOWN_DRAIN_TIMEOUT_MS,
+# 120s by default). This must be comfortably larger, or systemd sends SIGKILL
+# mid-call and the drain was pointless.
+TimeoutStopSec=180
+KillSignal=SIGTERM
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ivr-app

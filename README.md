@@ -19,8 +19,21 @@ TypeScript שמדברת עם אסטריסק דרך ARI.
 | מסמך | תוכן |
 |------|------|
 | [`docs/architecture.md`](docs/architecture.md) | איך זה עובד, ולמה כל רכיב נמצא שם |
-| [`docs/server-setup.md`](docs/server-setup.md) | הקמת השרת מאפס |
+| [`docs/deployment.md`](docs/deployment.md) | פריסה על דרופלט, ופריסות אוטומטיות מגיטהאב |
+| [`docs/server-setup.md`](docs/server-setup.md) | הקמת השרת ידנית, צעד־צעד |
 | [`docs/twilio-setup.md`](docs/twilio-setup.md) | הגדרת הטראנק והמספר |
+
+## פריסה בפקודה אחת
+
+```bash
+ssh root@<droplet-ip>
+apt update && apt install -y git
+git clone https://github.com/27180781/IVR.git /opt/ivr
+cd /opt/ivr && ./scripts/bootstrap-server.sh
+```
+
+פריסות שוטפות: `sudo ./scripts/deploy.sh`, או אוטומטית בכל מיזוג ל־`main`
+דרך `.github/workflows/deploy.yml`. הפרטים ב־[`docs/deployment.md`](docs/deployment.md).
 
 ## הזרימה הנוכחית
 

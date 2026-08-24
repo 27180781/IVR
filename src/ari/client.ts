@@ -4,6 +4,11 @@ import { logger } from '../logger.js';
 
 export type StasisHandler = (ari: Client, channel: Channel, args: string[]) => Promise<void>;
 
+/** ARI rejected our credentials - a configuration fault, not a network one. */
+class AriAuthError extends Error {
+  override readonly name = 'AriAuthError';
+}
+
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30_000;
 
@@ -67,10 +72,46 @@ export class AriSupervisor {
     this.client = undefined;
   }
 
+  /**
+   * Check the ARI endpoint with a plain HTTP request before handing over to
+   * ari-client.
+   *
+   * This is not belt-and-braces. ari-client's swagger layer throws a bare
+   * string from inside a callback when authentication fails, outside any
+   * promise chain - so the try/catch below never sees it and the process dies
+   * with an unhandled exception. Under systemd's Restart=always that is an
+   * infinite crash loop, hammering Asterisk with 401s, and all the operator
+   * sees is a swagger stack trace.
+   *
+   * Catching it here turns a mismatched password into a clear, retrying error,
+   * which matters because the fix usually happens while the service is up.
+   */
+  private async preflight(): Promise<void> {
+    const url = new URL('/ari/asterisk/info', config.ARI_URL);
+    const credentials = Buffer.from(`${config.ARI_USERNAME}:${config.ARI_PASSWORD}`).toString('base64');
+
+    const res = await fetch(url, {
+      headers: { authorization: `Basic ${credentials}` },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (res.status === 401 || res.status === 403) {
+      throw new AriAuthError(
+        `ARI rejected user "${config.ARI_USERNAME}" (HTTP ${res.status}). ` +
+          'ARI_PASSWORD in .env must match the password for that user in ' +
+          '/etc/asterisk/ari.conf.',
+      );
+    }
+    if (!res.ok) {
+      throw new Error(`ARI preflight failed with HTTP ${res.status}`);
+    }
+  }
+
   private async connect(): Promise<void> {
     if (this.stopping) return;
 
     try {
+      await this.preflight();
       const client = await ari.connect(config.ARI_URL, config.ARI_USERNAME, config.ARI_PASSWORD);
       this.client = client;
 
@@ -112,7 +153,14 @@ export class AriSupervisor {
       // client's own retry budget is exhausted.
       await client.start(config.ARI_APP);
     } catch (err) {
-      logger.error({ err, url: config.ARI_URL }, 'failed to connect to ARI');
+      if (err instanceof AriAuthError) {
+        // Retrying will not fix this on its own, but exiting would only make
+        // systemd restart us into the same wall. Keep saying exactly what is
+        // wrong until somebody corrects the password.
+        logger.error({ url: config.ARI_URL }, err.message);
+      } else {
+        logger.error({ err, url: config.ARI_URL }, 'failed to connect to ARI');
+      }
       this.teardown();
       this.scheduleReconnect();
     }

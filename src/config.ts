@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
+
 const schema = z.object({
   ARI_URL: z.string().url().default('http://127.0.0.1:8088'),
   ARI_USERNAME: z.string().min(1, 'ARI_USERNAME is required'),
@@ -10,9 +12,19 @@ const schema = z.object({
   IVR_LANGUAGE: z.string().min(1).default('he'),
 
   DATA_SOURCE: z.enum(['mock', 'http']).default('mock'),
-  DATA_HTTP_URL: z.string().url().optional(),
-  DATA_HTTP_TOKEN: z.string().optional(),
+  // An unset variable in a .env file is an empty STRING, not undefined, so
+  // .optional() alone never fires and .url() rejects "". Without this, copying
+  // .env.example verbatim - which is what the setup docs tell you to do -
+  // crashes the app on startup.
+  DATA_HTTP_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  DATA_HTTP_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
   DATA_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
+
+  /**
+   * How long to let calls in progress finish before exiting on SIGTERM.
+   * systemd's TimeoutStopSec must be comfortably larger than this.
+   */
+  SHUTDOWN_DRAIN_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(120_000),
 
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   LOG_PRETTY: z

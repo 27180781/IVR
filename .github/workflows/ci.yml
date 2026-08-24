@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      # The flow validator runs at import time, so this fails the build on a
+      # transition that points at a state which does not exist.
+      - name: Validate call flow
+        run: node -e "import('./dist/ivr/flows/main.js').then(m => { const f = m.createMainFlow({ name: 'ci', lookupOrder: async () => null }); console.log('flow ok:', Object.keys(f.states).length, 'states'); })"
+
+      - name: Shell scripts parse
+        run: for f in scripts/*.sh; do bash -n "$f" || exit 1; done

@@ -1,0 +1,62 @@
+name: Deploy
+
+# Automatic on merge to the deployment branch, and manual from the Actions tab.
+#
+# Requires four repository secrets (Settings -> Secrets and variables -> Actions):
+#   DEPLOY_HOST       the droplet's public IP
+#   DEPLOY_USER       the SSH user (a dedicated deploy user, not root - see docs)
+#   DEPLOY_SSH_KEY    that user's PRIVATE key, whole file including the header
+#   DEPLOY_PATH       where the checkout lives, e.g. /opt/ivr
+#
+# Deploying to a phone system is not like deploying a website: a bad restart
+# means callers hear nothing. scripts/deploy.sh guards this by building before
+# it stops anything, draining calls in progress, verifying that Asterisk
+# accepted the app back, and rolling back if it did not.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Never let two deploys touch the server at once.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Fail here rather than on the server. A build that breaks in CI must
+      # never get as far as restarting the service that answers the phone.
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          PATH_ON_SERVER: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "${USER}@${HOST}" \
+            "sudo ${PATH_ON_SERVER:-/opt/ivr}/scripts/deploy.sh"
+
+      - name: Clean up the key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy
