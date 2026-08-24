@@ -41,6 +41,38 @@ command -v apt-get >/dev/null || die "this script targets Debian/Ubuntu"
 . /etc/os-release
 info "OS: ${PRETTY_NAME}"
 
+# The distro release decides which Asterisk you get, and that is not a detail:
+# Ubuntu 22.04 ships Asterisk 18, whose packaging does not give us a usable ARI.
+# Everything downstream then fails in ways that look like config errors.
+# Refuse early and say so, rather than provisioning a server that cannot work.
+SUPPORTED=1
+case "${ID}" in
+  ubuntu) [[ "${VERSION_ID}" < "24.04" ]] && SUPPORTED=0 ;;
+  debian) [[ "${VERSION_ID%%.*}" -lt 12 ]] 2>/dev/null && SUPPORTED=0 ;;
+  *) SUPPORTED=0 ;;
+esac
+
+if (( ! SUPPORTED )) && [[ "${ALLOW_UNSUPPORTED:-0}" != "1" ]]; then
+  cat >&2 <<UNSUPPORTED
+
+error: ${PRETTY_NAME} is not supported.
+
+  This project is verified on Ubuntu 24.04 LTS (Asterisk 20) and expects
+  Debian 12 or newer to behave the same way.
+
+  ${PRETTY_NAME} would install a much older Asterisk. On Ubuntu 22.04 that
+  is Asterisk 18, which leaves you with no working ARI - and ARI is the
+  entire interface between Asterisk and this application.
+
+  Rebuild the server on Ubuntu 24.04 LTS. On DigitalOcean that is
+  Destroy -> Create Droplet -> Ubuntu 24.04 (LTS) x64, and takes a minute.
+
+  To override anyway:  ALLOW_UNSUPPORTED=1 ./scripts/bootstrap-server.sh
+
+UNSUPPORTED
+  exit 1
+fi
+
 HAS_SYSTEMD=0
 [[ -d /run/systemd/system ]] && HAS_SYSTEMD=1
 (( HAS_SYSTEMD )) || warn "systemd is not running - services will be configured but not started"
@@ -125,6 +157,15 @@ else
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq asterisk >/dev/null
   info "installed $(asterisk -V 2>/dev/null)"
 fi
+
+# "Asterisk is installed" is not the bar. Without the ARI modules on disk there
+# is no interface for the application to attach to, and every later step would
+# succeed while the system as a whole could never answer a call.
+if ! ls /usr/lib/asterisk/modules/res_ari.so >/dev/null 2>&1; then
+  die "this Asterisk build has no res_ari.so - ARI is unavailable on ${PRETTY_NAME}.
+       Rebuild the server on Ubuntu 24.04 LTS."
+fi
+info "ARI modules present"
 
 #-----------------------------------------------------------------------------
 step "Installing Node.js"

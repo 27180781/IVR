@@ -10,7 +10,7 @@
 
 | הגדרה | בחירה | למה |
 |-------|--------|-----|
-| Image | Ubuntu 24.04 LTS | מגיע עם Asterisk 20 LTS במאגר |
+| Image | **Ubuntu 24.04 LTS** — לא 22.04 | 24.04 מביא Asterisk 20 LTS. 22.04 מביא Asterisk 18, שבו אין ARI שמיש — והמערכת לא תוכל לעבוד בכלל |
 | Plan | Basic, 2 vCPU / 2GB | מספיק לעשרות שיחות במקביל |
 | Region | Frankfurt (fra1) או Amsterdam (ams3) | הכי קרוב לישראל מבין אזורי DO |
 | Authentication | SSH key | אל תשתמשו בסיסמה על שרת SIP |

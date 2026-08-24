@@ -74,16 +74,22 @@ DATA_DIR="${DATA_DIR:-/usr/share/asterisk}"
 SOUND_DIR="${DATA_DIR}/sounds/${IVR_LANGUAGE:-he}"
 echo "    resolved sounds directory: ${SOUND_DIR}"
 
-if [[ -d "${SOUND_DIR}/ivr" ]]; then
-  pass "$(find "${SOUND_DIR}/ivr" -type f | wc -l) prompt file(s) in ${SOUND_DIR}/ivr"
+# An empty directory is not a pass. Reporting "OK 0 files" is worse than
+# saying nothing: it tells you the one thing standing between a working
+# system and a silent one is fine, when it is not.
+PROMPT_COUNT=$(find "${SOUND_DIR}/ivr" -type f 2>/dev/null | wc -l)
+if [[ "${PROMPT_COUNT}" -gt 0 ]]; then
+  pass "${PROMPT_COUNT} prompt file(s) in ${SOUND_DIR}/ivr"
 else
-  fail "${SOUND_DIR}/ivr does not exist - run 'npm run prompts:list'"
+  fail "no prompt files in ${SOUND_DIR}/ivr - the IVR will be silent"
+  echo "      run 'npm run prompts:list' for the recording sheet"
 fi
 
-if [[ -d "${SOUND_DIR}/digits" ]]; then
-  pass "$(find "${SOUND_DIR}/digits" -type f | wc -l) digit file(s) in ${SOUND_DIR}/digits"
+DIGIT_COUNT=$(find "${SOUND_DIR}/digits" -type f 2>/dev/null | wc -l)
+if [[ "${DIGIT_COUNT}" -ge 10 ]]; then
+  pass "${DIGIT_COUNT} digit file(s) in ${SOUND_DIR}/digits"
 else
-  fail "${SOUND_DIR}/digits missing - numbers will not be read out"
+  fail "${DIGIT_COUNT}/10 digit files in ${SOUND_DIR}/digits - numbers will not be read out"
 fi
 
 echo
