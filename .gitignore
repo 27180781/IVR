@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+data/*.jsonl
+*.log
+.DS_Store
+asterisk/asterisk.env
+sounds/**/*.wav
+sounds/**/*.gsm
+sounds/**/*.ulaw
+sounds/**/*.mp3

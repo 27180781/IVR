@@ -1,0 +1,29 @@
+{
+  "name": "ivr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Asterisk ARI based IVR application (Twilio Elastic SIP Trunk -> Asterisk -> this app)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prompts:list": "tsx scripts/list-prompts.ts"
+  },
+  "dependencies": {
+    "ari-client": "^2.2.0",
+    "dotenv": "^16.4.5",
+    "pino": "^9.5.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "pino-pretty": "^11.3.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

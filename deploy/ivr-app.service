@@ -1,0 +1,40 @@
+# systemd unit for the IVR application.
+#
+#   sudo cp deploy/ivr-app.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ivr-app
+#
+[Unit]
+Description=IVR application (Asterisk ARI)
+Documentation=https://github.com/27180781/ivr
+# Asterisk does not have to be up for the app to start - it will retry - but
+# starting in the right order avoids a noisy first minute.
+After=network-online.target asterisk.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ivr
+Group=ivr
+WorkingDirectory=/opt/ivr
+EnvironmentFile=/opt/ivr/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ivr-app
+
+# Hardening. The app needs nothing but the network and its own directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ivr/data
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
