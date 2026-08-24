@@ -74,16 +74,29 @@ if command -v asterisk >/dev/null 2>&1 && asterisk -rx 'core show version' >/dev
   asterisk -rx 'dialplan reload'
   asterisk -rx 'module reload res_rtp_asterisk.so'
 
+  # http.conf drives the built-in HTTP server, which is the transport ARI runs
+  # over. Reloading pjsip and ari without it leaves the server on whatever it
+  # read at startup - and the packaged default is enabled=no, so ARI ends up
+  # with nowhere to listen while every other reload reports success.
+  asterisk -rx 'module reload http'
+
   # A module that declined to load at startup cannot be reloaded - it has to be
   # loaded. That is the state Asterisk lands in when ari.conf was unreadable,
   # which is exactly what this script may have just fixed.
-  if asterisk -rx 'module show like res_ari.so' | grep -q 'Not Running'; then
+  if asterisk -rx 'module show like res_ari' | grep -q 'Not Running'; then
     echo "res_ari was not running, loading it"
     asterisk -rx 'module load res_ari.so'
   else
     asterisk -rx 'module reload res_ari.so'
   fi
-  echo "asterisk reloaded"
+  # Confirm the thing that actually matters, rather than trusting the reloads.
+  if asterisk -rx 'http show status' | grep -qi 'Server Enabled'; then
+    echo "asterisk reloaded; HTTP server is up"
+  else
+    echo
+    echo "warning: the HTTP server is still disabled, so ARI has no transport." >&2
+    echo "         check /etc/asterisk/http.conf, then: systemctl restart asterisk" >&2
+  fi
 else
   echo "asterisk is not running - start it with: systemctl start asterisk"
 fi

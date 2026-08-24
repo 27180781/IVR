@@ -6,12 +6,18 @@
 set -uo pipefail
 
 pass() { printf '  \033[32mOK\033[0m   %s\n' "$1"; }
+info() { printf '       %s\n' "$1"; }
 fail() { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAILED=1; }
 FAILED=0
 
 echo "Asterisk"
 if asterisk -rx 'core show version' >/dev/null 2>&1; then
   pass "running: $(asterisk -rx 'core show version')"
+  # Uptime matters when reading everything below: a process that restarted
+  # seconds ago is still loading modules, and a half-loaded Asterisk answers
+  # these questions differently every time you ask.
+  UPTIME_LINE=$(asterisk -rx 'core show uptime' 2>/dev/null | head -2 | tr '\n' ' ')
+  info "${UPTIME_LINE}"
 else
   fail "not running or CLI not reachable"
   exit 1
@@ -36,20 +42,33 @@ fi
 
 echo
 echo "ARI"
-if asterisk -rx 'module show like res_ari.so' 2>/dev/null | grep -q 'Running'; then
+# 'module show like' takes a regex, so keep the pattern plain.
+ARI_MODULES=$(asterisk -rx 'module show like res_ari' 2>/dev/null)
+if echo "${ARI_MODULES}" | grep -q '[0-9] *Running'; then
   pass "res_ari is running"
-elif asterisk -rx 'module show like res_ari.so' 2>/dev/null | grep -q 'Not Running'; then
+elif echo "${ARI_MODULES}" | grep -q 'Not Running'; then
   fail "res_ari declined to load"
   echo "      Usually ari.conf is unreadable by the asterisk user."
   echo "      Check:  ls -l /etc/asterisk/ari.conf   (want root:asterisk 640)"
   echo "      Then:   sudo asterisk -rx 'module load res_ari.so'"
 else
-  fail "res_ari not present - is asterisk-modules installed?"
+  fail "res_ari not present or Asterisk is still starting"
+  echo "${ARI_MODULES}" | sed 's/^/      /'
 fi
-if asterisk -rx 'ari show status' 2>/dev/null | grep -qi 'enabled'; then
-  pass "ARI enabled"
+if asterisk -rx 'ari show status' 2>/dev/null | grep -qi 'Enabled: Yes'; then
+  pass "ARI enabled in ari.conf"
 else
-  fail "ARI not enabled - check /etc/asterisk/ari.conf and http.conf"
+  fail "ARI not enabled - check /etc/asterisk/ari.conf"
+fi
+
+# ARI being "enabled" means nothing without the HTTP server it runs over.
+# These are two separate switches and they fail independently.
+if asterisk -rx 'http show status' 2>/dev/null | grep -qi 'Server Enabled'; then
+  pass "HTTP server is listening"
+else
+  fail "HTTP server disabled - ARI has no transport"
+  echo "      /etc/asterisk/http.conf needs enabled=yes, then:"
+  echo "      sudo asterisk -rx 'module reload http'"
 fi
 asterisk -rx 'http show status' 2>/dev/null | grep -i 'bound\|Server' | sed 's/^/    /'
 
