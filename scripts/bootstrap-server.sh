@@ -281,9 +281,20 @@ if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
   useradd --system --home "${REPO_ROOT}" --shell /usr/sbin/nologin "${SERVICE_USER}"
   info "created system user '${SERVICE_USER}'"
 fi
+# Ownership: root owns the code, the service account owns only its data.
+#
+# Handing the whole checkout to the service user looks harmless and is not.
+# It lets the process that answers the phone rewrite its own code, and it
+# makes git refuse to operate here at all ("detected dubious ownership"),
+# which breaks every future pull and every automated deploy.
 mkdir -p "${REPO_ROOT}/data"
-chown -R "${SERVICE_USER}:${SERVICE_USER}" "${REPO_ROOT}"
-chmod 600 "${APP_ENV}" "${ASTERISK_ENV}"
+chown -R root:root "${REPO_ROOT}"
+chown -R "${SERVICE_USER}:${SERVICE_USER}" "${REPO_ROOT}/data"
+
+# The service reads these; it must not be able to change them.
+chown "root:${SERVICE_USER}" "${APP_ENV}"
+chmod 640 "${APP_ENV}"
+chmod 600 "${ASTERISK_ENV}"
 
 # The shipped unit assumes /opt/ivr; point it at wherever this checkout lives.
 sed -e "s|/opt/ivr|${REPO_ROOT}|g" \

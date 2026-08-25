@@ -25,6 +25,14 @@ die()  { printf '\n\033[31merror:\033[0m %s\n' "$1" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "run as root (sudo ./scripts/deploy.sh)"
 cd "${REPO_ROOT}"
 
+# Earlier versions of bootstrap gave the whole checkout to the service user,
+# which makes git refuse to run here. Repair it rather than failing on a
+# machine that was provisioned before the fix.
+if [[ "$(stat -c '%U' "${REPO_ROOT}/.git")" != "root" ]]; then
+  info "repairing repository ownership (was $(stat -c '%U' "${REPO_ROOT}/.git"))"
+  chown -R root:root "${REPO_ROOT}/.git"
+fi
+
 #-----------------------------------------------------------------------------
 step "Fetching ${BRANCH}"
 #-----------------------------------------------------------------------------
@@ -92,7 +100,10 @@ healthy() {
   return 1
 }
 
-chown -R "${SERVICE_USER}:${SERVICE_USER}" "${REPO_ROOT}"
+chown -R root:root "${REPO_ROOT}"
+chown -R "${SERVICE_USER}:${SERVICE_USER}" "${REPO_ROOT}/data"
+chown "root:${SERVICE_USER}" "${REPO_ROOT}/.env" 2>/dev/null || true
+chmod 640 "${REPO_ROOT}/.env" 2>/dev/null || true
 info "restarting - calls in progress are allowed to finish first, so this"
 info "may take up to SHUTDOWN_DRAIN_TIMEOUT_MS if the line is busy"
 systemctl restart "${SERVICE}"
@@ -113,7 +124,8 @@ journalctl -u "${SERVICE}" -n 40 --no-pager | sed 's/^/    /'
 git reset --hard "${BEFORE}"
 npm ci --no-audit --no-fund
 npm run build
-chown -R "${SERVICE_USER}:${SERVICE_USER}" "${REPO_ROOT}"
+chown -R root:root "${REPO_ROOT}"
+chown -R "${SERVICE_USER}:${SERVICE_USER}" "${REPO_ROOT}/data"
 systemctl restart "${SERVICE}"
 
 if healthy; then
