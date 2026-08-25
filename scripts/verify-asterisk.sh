@@ -25,7 +25,10 @@ fi
 
 echo
 echo "Twilio trunk"
-if asterisk -rx 'pjsip show endpoint twilio' 2>/dev/null | grep -q 'Endpoint:'; then
+ENDPOINT=$(asterisk -rx 'pjsip show endpoint twilio' 2>/dev/null)
+if [[ -z "${ENDPOINT}" ]]; then
+  fail "could not query PJSIP endpoints"
+elif echo "${ENDPOINT}" | grep -q 'Endpoint:'; then
   pass "endpoint 'twilio' is configured"
 else
   fail "endpoint 'twilio' missing - check /etc/asterisk/pjsip.conf"
@@ -34,7 +37,10 @@ asterisk -rx 'pjsip show identifies' 2>/dev/null | sed 's/^/    /'
 
 echo
 echo "Dialplan"
-if asterisk -rx 'dialplan show from-twilio' 2>/dev/null | grep -q 'Stasis'; then
+DIALPLAN=$(asterisk -rx 'dialplan show from-twilio' 2>/dev/null)
+if [[ -z "${DIALPLAN}" ]]; then
+  fail "could not query the dialplan"
+elif echo "${DIALPLAN}" | grep -q 'Stasis'; then
   pass "context 'from-twilio' hands calls to Stasis"
 else
   fail "context 'from-twilio' missing or not calling Stasis"
@@ -44,7 +50,9 @@ echo
 echo "ARI"
 # 'module show like' takes a regex, so keep the pattern plain.
 ARI_MODULES=$(asterisk -rx 'module show like res_ari' 2>/dev/null)
-if echo "${ARI_MODULES}" | grep -q '[0-9] *Running'; then
+if [[ -z "${ARI_MODULES}" ]]; then
+  fail "could not query Asterisk for modules"
+elif echo "${ARI_MODULES}" | grep -q '[0-9] *Running'; then
   pass "res_ari is running"
 elif echo "${ARI_MODULES}" | grep -q 'Not Running'; then
   fail "res_ari declined to load"
@@ -55,22 +63,32 @@ else
   fail "res_ari not present or Asterisk is still starting"
   echo "${ARI_MODULES}" | sed 's/^/      /'
 fi
-if asterisk -rx 'ari show status' 2>/dev/null | grep -qi 'Enabled: Yes'; then
+# Ask Asterisk once and judge THAT answer. Querying separately for the verdict
+# and for the display can print "disabled" directly above "Server Enabled",
+# which is how a working system gets reported as broken.
+ARI_STATUS=$(asterisk -rx 'ari show status' 2>/dev/null)
+if [[ -z "${ARI_STATUS}" ]]; then
+  fail "could not query ARI status"
+elif echo "${ARI_STATUS}" | grep -qiE 'Enabled:[[:space:]]*Yes'; then
   pass "ARI enabled in ari.conf"
 else
   fail "ARI not enabled - check /etc/asterisk/ari.conf"
+  echo "${ARI_STATUS}" | sed 's/^/      /'
 fi
 
 # ARI being "enabled" means nothing without the HTTP server it runs over.
 # These are two separate switches and they fail independently.
-if asterisk -rx 'http show status' 2>/dev/null | grep -qi 'Server Enabled'; then
+HTTP_STATUS=$(asterisk -rx 'http show status' 2>/dev/null)
+if [[ -z "${HTTP_STATUS}" ]]; then
+  fail "could not query the HTTP server"
+elif echo "${HTTP_STATUS}" | grep -qiE 'Server[[:space:]]+Enabled'; then
   pass "HTTP server is listening"
 else
   fail "HTTP server disabled - ARI has no transport"
   echo "      /etc/asterisk/http.conf needs enabled=yes, then:"
   echo "      sudo asterisk -rx 'module reload http'"
 fi
-asterisk -rx 'http show status' 2>/dev/null | grep -i 'bound\|Server' | sed 's/^/    /'
+echo "${HTTP_STATUS}" | grep -iE 'bound|Server' | sed 's/^/    /'
 
 echo
 echo "Registered Stasis applications"
