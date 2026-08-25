@@ -26,11 +26,24 @@ const schema = z.object({
    */
   SHUTDOWN_DRAIN_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(120_000),
 
-  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  LOG_PRETTY: z
+  // ---- Dashboard ----
+  WEB_ENABLED: z
     .string()
-    .default('false')
+    .default('true')
     .transform((v) => v === 'true' || v === '1'),
+  WEB_PORT: z.coerce.number().int().positive().default(3000),
+  /**
+   * Loopback by default. The dashboard is meant to sit behind a reverse proxy
+   * that terminates TLS - binding it to a public interface would serve call
+   * records, and the phone numbers in them, over plain HTTP.
+   */
+  WEB_BIND: z.string().default('127.0.0.1'),
+  WEB_USER: z.string().default('admin'),
+  WEB_PASSWORD: z.preprocess(emptyToUndefined, z.string().min(8).optional()),
+  /** How many recent log lines the dashboard keeps in memory. */
+  WEB_LOG_BUFFER: z.coerce.number().int().positive().default(500),
+
+  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   CALL_LOG_PATH: z.string().default('./data/calls.jsonl'),
 });
 

@@ -9,6 +9,8 @@ import { callLogger, logger } from './logger.js';
 import { createDataSource } from './services/data.js';
 import { StaticFileSpeechProvider } from './services/speech.js';
 import { recordCall } from './store/calls.js';
+import { callEnded, callStarted } from './store/activity.js';
+import { startDashboard } from './web/server.js';
 
 const dataSource = createDataSource();
 const speech = new StaticFileSpeechProvider();
@@ -46,6 +48,7 @@ async function handleCall(ari: Client, channel: Channel, args: string[]): Promis
   const log = callLogger(ctx.callId, from, to);
   const call = new CallChannel(ari, channel, log, config.IVR_LANGUAGE);
   activeCalls.add(ctx.callId);
+  callStarted({ callId: ctx.callId, from, to, startedAt: ctx.startedAt });
 
   try {
     log.info({ flow: flow.name }, 'call started');
@@ -67,6 +70,7 @@ async function handleCall(ari: Client, channel: Channel, args: string[]): Promis
     await recordCall(ctx, outcome);
   } finally {
     activeCalls.delete(ctx.callId);
+    callEnded(ctx.callId);
     if (draining && activeCalls.size === 0) drainDone?.();
   }
 }
@@ -125,4 +129,5 @@ process.on('uncaughtException', (err) => {
 });
 
 await supervisor.start();
+startDashboard();
 logger.info({ app: config.ARI_APP, dataSource: dataSource.name }, 'IVR application ready');

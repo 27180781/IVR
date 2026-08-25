@@ -20,6 +20,7 @@ TypeScript שמדברת עם אסטריסק דרך ARI.
 |------|------|
 | [`docs/architecture.md`](docs/architecture.md) | איך זה עובד, ולמה כל רכיב נמצא שם |
 | [`docs/deployment.md`](docs/deployment.md) | פריסה על דרופלט, ופריסות אוטומטיות מגיטהאב |
+| [`docs/dashboard.md`](docs/dashboard.md) | לוח בקרה בדפדפן: חיבור דומיין, HTTPS ואבטחה |
 | [`docs/server-setup.md`](docs/server-setup.md) | הקמת השרת ידנית, צעד־צעד |
 | [`docs/twilio-setup.md`](docs/twilio-setup.md) | הגדרת הטראנק והמספר |
 
@@ -75,6 +76,16 @@ npm run prompts:list  # דף ההקלטות: מה להקליט ואיך לקרו
 npm run build         # קומפילציה ל-dist/
 ```
 
+## לוח בקרה
+
+```bash
+sudo ./scripts/setup-web.sh your-domain.com
+```
+
+עמוד אחד עם שיחות פעילות בזמן אמת, היסטוריה עם המסלול המלא של כל שיחה,
+ויומן חי — במקום SSH. HTTPS אוטומטי, וללא סיסמה הוא לא עולה בכלל.
+הפרטים ב־[`docs/dashboard.md`](docs/dashboard.md).
+
 ## מבנה הפרויקט
 
 ```
@@ -93,6 +104,8 @@ src/
     data.ts             DataSource: mock / HTTP
     speech.ts           SpeechProvider: קבצים מוקלטים היום, TTS מחר
   store/calls.ts        לוג שיחות ב-JSONL
+  store/activity.ts     מצב חי לדשבורד: שיחות פעילות ויומן מתגלגל
+  web/                  שרת הדשבורד והעמוד עצמו
 
 asterisk/               קונפיג האסטריסק כקוד (נפרס בסקריפט)
 scripts/                פריסה ואימות

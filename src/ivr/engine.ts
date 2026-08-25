@@ -1,4 +1,5 @@
 import type { CallChannel } from '../ari/channel.js';
+import { callStateChanged } from '../store/activity.js';
 import type { SpeechProvider } from '../services/speech.js';
 import { speakNumber, spellDigits } from '../services/speech.js';
 import type { CallContext, Flow, Speech, State, Utterance } from './flow.js';
@@ -77,6 +78,7 @@ export class IvrEngine {
         }
 
         path.push(stateId);
+        callStateChanged(ctx.callId, stateId);
         call.log.info({ state: stateId, type: state.type }, 'entering state');
 
         const step = await this.runState(state, call, ctx);

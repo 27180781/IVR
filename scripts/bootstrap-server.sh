@@ -240,7 +240,12 @@ fi
 if [[ -f "${APP_ENV}" ]]; then
   info ".env exists, leaving it alone"
 else
+  # A generated dashboard password means the dashboard works out of the box
+  # instead of silently refusing to start, without ever defaulting to
+  # something guessable.
+  WEB_PASSWORD="$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
   sed -e "s|^ARI_PASSWORD=.*|ARI_PASSWORD=${ARI_PASSWORD}|" \
+      -e "s|^WEB_PASSWORD=.*|WEB_PASSWORD=${WEB_PASSWORD}|" \
       "${REPO_ROOT}/.env.example" > "${APP_ENV}"
   chmod 600 "${APP_ENV}"
   info "wrote .env (ARI password matched to Asterisk)"
