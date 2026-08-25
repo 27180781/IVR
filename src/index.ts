@@ -1,6 +1,7 @@
 import type { Channel, Client } from 'ari-client';
 import { AriSupervisor } from './ari/client.js';
 import { CallChannel } from './ari/channel.js';
+import { adoptOutboundChannel } from './ari/dialer.js';
 import { config } from './config.js';
 import { IvrEngine } from './ivr/engine.js';
 import type { CallContext } from './ivr/flow.js';
@@ -20,6 +21,10 @@ const engine = new IvrEngine(flow, speech);
 const activeCalls = new Set<string>();
 
 async function handleCall(ari: Client, channel: Channel, args: string[]): Promise<void> {
+  // Legs we originated come back through the same event. They belong to the
+  // call that placed them, not to a new one.
+  if (args[0] === 'outbound' && adoptOutboundChannel(channel)) return;
+
   if (draining) {
     logger.info({ channelId: channel.id }, 'draining - handing call back to the dialplan');
     // extensions.conf plays ivr/system-unavailable and hangs up.

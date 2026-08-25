@@ -17,7 +17,7 @@ export const PROMPTS = {
   },
   mainMenu: {
     file: 'ivr/main-menu',
-    text: 'לבירור סטטוס הזמנה, הקישו 1. לשעות הפעילות, הקישו 2. לשמיעת התפריט שוב, הקישו 9.',
+    text: 'לבירור סטטוס הזמנה, הקישו 1. לשעות הפעילות, הקישו 2. לחיוג למספר אחר, הקישו 3. לשמיעת התפריט שוב, הקישו 9.',
   },
   askReference: {
     file: 'ivr/ask-reference',
@@ -87,6 +87,48 @@ export const PROMPTS = {
     file: 'ivr/goodbye',
     text: 'תודה שפניתם אלינו. להתראות.',
   },
+  // ---- Outbound dialling ----
+  askPin: {
+    file: 'ivr/ask-pin',
+    text: 'אנא הקישו את קוד הגישה, ולאחריו סולמית.',
+  },
+  pinRejected: {
+    file: 'ivr/pin-rejected',
+    text: 'קוד הגישה שהקשתם שגוי.',
+  },
+  askDestination: {
+    file: 'ivr/ask-destination',
+    text: 'אנא הקישו את מספר היעד, כולל קידומת בינלאומית, ולאחריו סולמית.',
+  },
+  invalidDestination: {
+    file: 'ivr/invalid-destination',
+    text: 'מספר היעד שהקשתם אינו תקין.',
+  },
+  destinationNotAllowed: {
+    file: 'ivr/destination-not-allowed',
+    text: 'חיוג ליעד זה אינו מורשה.',
+  },
+  dialing: {
+    file: 'ivr/dialing',
+    text: 'מחייג, אנא המתינו.',
+  },
+  dialBusy: {
+    file: 'ivr/dial-busy',
+    text: 'המספר תפוס.',
+  },
+  dialNoAnswer: {
+    file: 'ivr/dial-no-answer',
+    text: 'אין מענה במספר שחייגתם.',
+  },
+  dialFailed: {
+    file: 'ivr/dial-failed',
+    text: 'לא ניתן להשלים את השיחה כעת.',
+  },
+  outboundDisabled: {
+    file: 'ivr/outbound-disabled',
+    text: 'שירות החיוג אינו זמין כרגע.',
+  },
+
   /** Played by the dialplan when the application itself is unreachable. */
   systemUnavailable: {
     file: 'ivr/system-unavailable',

@@ -51,7 +51,7 @@ export class CallChannel {
   private readonly digitObservers = new Set<() => void>();
 
   constructor(
-    private readonly ari: Client,
+    readonly ari: Client,
     readonly channel: Channel,
     readonly log: CallLogger,
     private readonly language: string,
@@ -98,6 +98,11 @@ export class CallChannel {
     }
     this.endListeners.add(listener);
     return () => this.endListeners.delete(listener);
+  }
+
+  /** Notified when the caller leaves. Returns an unsubscribe function. */
+  onHangup(listener: () => void): () => void {
+    return this.onEnd(listener);
   }
 
   async answer(): Promise<void> {

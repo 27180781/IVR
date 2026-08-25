@@ -1,4 +1,6 @@
 import type { CallChannel } from '../ari/channel.js';
+import { dialOut } from '../ari/dialer.js';
+import { config } from '../config.js';
 import { callStateChanged } from '../store/activity.js';
 import type { SpeechProvider } from '../services/speech.js';
 import { speakNumber, spellDigits } from '../services/speech.js';
@@ -173,6 +175,40 @@ export class IvrEngine {
         } catch (err) {
           call.log.error({ err, state: state.id }, 'action failed');
           return goto(state.onError);
+        }
+      }
+
+      case 'dial': {
+        if (!config.OUTBOUND_ENABLED) {
+          // Should be unreachable - the flow gates on this first - but a
+          // dial-through must never run because one guard was missed.
+          call.log.error({ state: state.id }, 'dial state reached while outbound is disabled');
+          return goto(state.onFailed);
+        }
+
+        if (state.speech) {
+          if ((await call.play(this.resolve(state.speech, ctx))) === 'hangup') return hungUp;
+        }
+
+        const outcome = await dialOut(
+          call.ari,
+          call,
+          { destination: state.destination(ctx), from: ctx.from, to: ctx.to },
+          call.log,
+        );
+        if (call.hungUp) return hungUp;
+
+        switch (outcome) {
+          case 'answered':
+            return goto(state.onAnswered);
+          case 'busy':
+            return goto(state.onBusy);
+          case 'no-answer':
+            return goto(state.onNoAnswer);
+          case 'rejected':
+            return goto(state.onRejected);
+          case 'failed':
+            return goto(state.onFailed);
         }
       }
 

@@ -32,6 +32,7 @@ TypeScript שמדברת עם אסטריסק דרך ARI.
 | [`docs/architecture.md`](docs/architecture.md) | איך זה עובד, ולמה כל רכיב נמצא שם |
 | [`docs/deployment.md`](docs/deployment.md) | פריסה על דרופלט, ופריסות אוטומטיות מגיטהאב |
 | [`docs/dashboard.md`](docs/dashboard.md) | לוח בקרה בדפדפן: חיבור דומיין, HTTPS ואבטחה |
+| [`docs/outbound.md`](docs/outbound.md) | חיוג יוצא: הפעלה, זיהוי יוצא ואבטחה |
 | [`docs/self-hosting.md`](docs/self-hosting.md) | **Self-hosting guide (English)** — להקמה על שרת אחר |
 | [`docs/server-setup.md`](docs/server-setup.md) | הקמת השרת ידנית, צעד־צעד |
 | [`docs/twilio-setup.md`](docs/twilio-setup.md) | הגדרת הטראנק והמספר |
@@ -63,6 +64,8 @@ cd /opt/ivr && ./scripts/bootstrap-server.sh
       │                   │    │ לא נמצא
       │                   ▼    ▼    ▼
       ├─── 2 ──► שעות פעילות ──► "משהו נוסף?" ──► סיום
+      │
+      ├─── 3 ──► חיוג יוצא (כבוי כברירת מחדל — docs/outbound.md)
       │
       └─── 9 ──► חזרה על התפריט
 ```

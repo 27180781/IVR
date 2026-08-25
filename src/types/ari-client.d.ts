@@ -40,6 +40,31 @@ declare module 'ari-client' {
     stop(): Promise<void>;
   }
 
+  export interface Bridge extends EventEmitter {
+    id: string;
+    addChannel(opts: { channel: string | string[] }): Promise<void>;
+    removeChannel(opts: { channel: string | string[] }): Promise<void>;
+    destroy(): Promise<void>;
+  }
+
+  export interface ChannelDestroyedEvent extends AriEvent {
+    type: 'ChannelDestroyed';
+    cause: number;
+    cause_txt: string;
+  }
+
+  export interface OriginateOptions {
+    endpoint: string;
+    app?: string;
+    appArgs?: string;
+    callerId?: string;
+    timeout?: number;
+    channelId?: string;
+    originator?: string;
+    formats?: string;
+    variables?: Record<string, string>;
+  }
+
   export interface Channel extends EventEmitter {
     id: string;
     name: string;
@@ -65,6 +90,10 @@ declare module 'ari-client' {
     channels: {
       get(opts: { channelId: string }): Promise<Channel>;
       hangup(opts: { channelId: string; reason?: string }): Promise<void>;
+      originate(opts: OriginateOptions): Promise<Channel>;
+    };
+    bridges: {
+      create(opts?: { type?: string; bridgeId?: string; name?: string }): Promise<Bridge>;
     };
     asterisk: {
       getInfo(): Promise<{ system?: { version?: string }; [key: string]: unknown }>;

@@ -196,6 +196,19 @@ Five state types: `play`, `menu`, `collect`, `action`, `hangup`. If a change is
 hard to express here, the missing piece belongs in `src/ivr/engine.ts` — not in
 `extensions.conf`.
 
+### Outbound dialling
+
+Option 3 in the menu lets a caller dial another number through the system.
+Off by default, and it refuses to start without a PIN — an open dial-through
+is an international calling card charged to you, and scanners find them.
+
+See [`outbound.md`](outbound.md) for setup. One thing worth knowing before you
+plan around it: **carriers restrict caller ID**. Twilio accepts a From only if
+the number is owned by your account or listed as a Verified Caller ID, so
+presenting the original caller's own number works for people you verify in
+advance and not for arbitrary callers. The system falls back to the number
+that was dialled rather than failing the call.
+
 ### Connect it to your system
 
 Out of the box `DATA_SOURCE=mock` serves five fixtures (`100001`–`100005`).

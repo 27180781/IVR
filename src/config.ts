@@ -26,6 +26,39 @@ const schema = z.object({
    */
   SHUTDOWN_DRAIN_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(120_000),
 
+  // ---- Outbound dialling (DISA) ----
+  /**
+   * Off unless deliberately turned on.
+   *
+   * A dial-through lets whoever reaches the menu place calls billed to this
+   * account, which is the single most exploited feature in telephony. It is
+   * opt-in, and refuses to run without a PIN.
+   */
+  OUTBOUND_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+  OUTBOUND_PIN: z.preprocess(emptyToUndefined, z.string().regex(/^\d{4,12}$/).optional()),
+  /** PJSIP endpoint to route outbound calls through. */
+  OUTBOUND_TRUNK_ENDPOINT: z.string().default('twilio'),
+  /**
+   * Whose number the destination sees.
+   *
+   * 'original' presents the inbound caller's own number. Carriers restrict
+   * this: Twilio accepts a From only if the number is owned by the account or
+   * listed as a Verified Caller ID, so this works for known callers and is
+   * rejected for arbitrary ones. 'trunk' always works.
+   */
+  OUTBOUND_CALLERID_MODE: z.enum(['original', 'trunk', 'fixed']).default('trunk'),
+  /** Used for 'fixed', and as the fallback when 'original' has nothing to use. */
+  OUTBOUND_CALLERID_NUMBER: z.preprocess(emptyToUndefined, z.string().optional()),
+  /** Comma-separated E.164 prefixes. Empty means anywhere, which is a liability. */
+  OUTBOUND_ALLOWED_PREFIXES: z.string().default(''),
+  /** Seconds to ring before giving up. */
+  OUTBOUND_TIMEOUT_SEC: z.coerce.number().int().positive().default(45),
+  /** Hard cap on a connected call, so a stuck one cannot bill indefinitely. */
+  OUTBOUND_MAX_DURATION_SEC: z.coerce.number().int().positive().default(600),
+
   // ---- Dashboard ----
   WEB_ENABLED: z
     .string()
@@ -57,6 +90,18 @@ function load() {
   const cfg = parsed.data;
   if (cfg.DATA_SOURCE === 'http' && !cfg.DATA_HTTP_URL) {
     throw new Error('DATA_SOURCE=http requires DATA_HTTP_URL to be set');
+  }
+  if (cfg.OUTBOUND_ENABLED && !cfg.OUTBOUND_PIN) {
+    // Fail closed. An unauthenticated dial-through is an open relay for
+    // international calls charged to this account, and it is found by
+    // scanners within days.
+    throw new Error(
+      'OUTBOUND_ENABLED=true requires OUTBOUND_PIN (4-12 digits). ' +
+        'A dial-through without one lets any caller dial anywhere at your expense.',
+    );
+  }
+  if (cfg.OUTBOUND_ENABLED && cfg.OUTBOUND_CALLERID_MODE === 'fixed' && !cfg.OUTBOUND_CALLERID_NUMBER) {
+    throw new Error('OUTBOUND_CALLERID_MODE=fixed requires OUTBOUND_CALLERID_NUMBER');
   }
   return cfg;
 }

@@ -76,13 +76,38 @@ export interface ActionState extends BaseState {
   onError: string;
 }
 
+/**
+ * Place an outbound call and bridge the caller to it.
+ *
+ * Every failure mode gets its own target: a caller told "the number is busy"
+ * does something different from one told "we could not place the call".
+ */
+export interface DialState extends BaseState {
+  type: 'dial';
+  /** The destination in E.164, derived from what the caller entered. */
+  destination: (ctx: CallContext) => string;
+  /** Played before dialling starts. */
+  speech?: Speech;
+  onAnswered: string;
+  onBusy: string;
+  onNoAnswer: string;
+  onRejected: string;
+  onFailed: string;
+}
+
 /** Optionally say goodbye, then end the call. */
 export interface HangupState extends BaseState {
   type: 'hangup';
   speech?: Speech;
 }
 
-export type State = PlayState | MenuState | CollectState | ActionState | HangupState;
+export type State =
+  | PlayState
+  | MenuState
+  | CollectState
+  | ActionState
+  | DialState
+  | HangupState;
 
 export interface Flow {
   name: string;
@@ -118,6 +143,15 @@ export function defineFlow(flow: Flow): Flow {
         break;
       case 'action':
         targets.push(['onError', state.onError]);
+        break;
+      case 'dial':
+        targets.push(
+          ['onAnswered', state.onAnswered],
+          ['onBusy', state.onBusy],
+          ['onNoAnswer', state.onNoAnswer],
+          ['onRejected', state.onRejected],
+          ['onFailed', state.onFailed],
+        );
         break;
       case 'hangup':
         break;

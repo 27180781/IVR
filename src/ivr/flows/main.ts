@@ -1,3 +1,6 @@
+import { timingSafeEqual } from 'node:crypto';
+import { config } from '../../config.js';
+import { destinationAllowed, normaliseDestination } from '../../ari/dialer.js';
 import type { DataSource, OrderRecord, OrderStatus } from '../../services/data.js';
 import { defineFlow, say, spell, type Flow, type Utterance } from '../flow.js';
 import type { PromptKey } from '../prompts.js';
@@ -11,6 +14,17 @@ const STATUS_PROMPT: Record<OrderStatus, PromptKey> = {
 };
 
 const REFERENCE_LENGTH = 6;
+
+/** A wrong PIN three times is someone guessing, not someone fumbling. */
+const MAX_PIN_ATTEMPTS = 3;
+
+function pinMatches(entered: string): boolean {
+  const expected = config.OUTBOUND_PIN ?? '';
+  if (!expected) return false;
+  const a = Buffer.from(entered);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 /**
  * Phase 1 flow: greet, offer a menu, look an order up by reference, read the
@@ -39,6 +53,7 @@ export function createMainFlow(data: DataSource): Flow {
         choices: {
           '1': 'askReference',
           '2': 'officeHours',
+          '3': 'outboundGate',
           '9': 'mainMenu',
         },
         onInvalid: [say('invalidChoice')],
@@ -122,6 +137,140 @@ export function createMainFlow(data: DataSource): Flow {
         onInvalid: [say('invalidChoice')],
         maxAttempts: 2,
         onExhausted: 'goodbye',
+      },
+
+      // ---- Outbound dialling ----------------------------------------------
+      // Gated three ways: switched off unless enabled, behind a PIN, and
+      // limited to allowed prefixes. Any one of them missing turns this into
+      // a service that dials the world at the account holder's expense.
+
+      outboundGate: {
+        id: 'outboundGate',
+        type: 'action',
+        run: async () => ({
+          next: config.OUTBOUND_ENABLED ? 'askPin' : 'outboundDisabled',
+        }),
+        onError: 'outboundDisabled',
+      },
+
+      outboundDisabled: {
+        id: 'outboundDisabled',
+        type: 'play',
+        speech: [say('outboundDisabled')],
+        next: 'mainMenu',
+      },
+
+      askPin: {
+        id: 'askPin',
+        type: 'collect',
+        speech: [say('askPin')],
+        variable: 'pin',
+        minDigits: 4,
+        maxDigits: 12,
+        terminator: '#',
+        maxAttempts: 2,
+        onExhausted: 'tooManyRetries',
+        next: 'checkPin',
+      },
+
+      checkPin: {
+        id: 'checkPin',
+        type: 'action',
+        run: async (ctx) => {
+          const attempts = Number(ctx.vars.pinAttempts ?? 0) + 1;
+          if (pinMatches(String(ctx.vars.pin ?? ''))) {
+            return { next: 'askDestination', vars: { pinAttempts: 0, pin: undefined } };
+          }
+          // Never keep the entered PIN around; it ends up in the call log.
+          return {
+            next: attempts >= MAX_PIN_ATTEMPTS ? 'tooManyRetries' : 'pinRejected',
+            vars: { pinAttempts: attempts, pin: undefined },
+          };
+        },
+        onError: 'outboundDisabled',
+      },
+
+      pinRejected: {
+        id: 'pinRejected',
+        type: 'play',
+        speech: [say('pinRejected')],
+        next: 'askPin',
+      },
+
+      askDestination: {
+        id: 'askDestination',
+        type: 'collect',
+        speech: [say('askDestination')],
+        variable: 'destinationInput',
+        minDigits: 8,
+        maxDigits: 18,
+        terminator: '#',
+        interDigitTimeoutMs: 5000,
+        onInvalid: [say('invalidDestination')],
+        maxAttempts: 3,
+        onExhausted: 'tooManyRetries',
+        next: 'validateDestination',
+      },
+
+      validateDestination: {
+        id: 'validateDestination',
+        type: 'action',
+        run: async (ctx) => {
+          const e164 = normaliseDestination(String(ctx.vars.destinationInput ?? ''));
+          if (!e164) return { next: 'invalidDestination' };
+          if (!destinationAllowed(e164)) {
+            return { next: 'destinationNotAllowed', vars: { destination: e164 } };
+          }
+          return { next: 'placeCall', vars: { destination: e164 } };
+        },
+        onError: 'dialFailed',
+      },
+
+      invalidDestination: {
+        id: 'invalidDestination',
+        type: 'play',
+        speech: [say('invalidDestination')],
+        next: 'askDestination',
+      },
+
+      destinationNotAllowed: {
+        id: 'destinationNotAllowed',
+        type: 'play',
+        speech: [say('destinationNotAllowed')],
+        next: 'askDestination',
+      },
+
+      placeCall: {
+        id: 'placeCall',
+        type: 'dial',
+        speech: [say('dialing')],
+        destination: (ctx) => String(ctx.vars.destination ?? ''),
+        onAnswered: 'goodbye',
+        onBusy: 'dialBusy',
+        onNoAnswer: 'dialNoAnswer',
+        onRejected: 'dialFailed',
+        onFailed: 'dialFailed',
+      },
+
+      dialBusy: {
+        id: 'dialBusy',
+        type: 'play',
+        speech: [say('dialBusy')],
+        next: 'askDestination',
+      },
+
+      dialNoAnswer: {
+        id: 'dialNoAnswer',
+        type: 'play',
+        speech: [say('dialNoAnswer')],
+        next: 'askDestination',
+      },
+
+      dialFailed: {
+        id: 'dialFailed',
+        type: 'play',
+        speech: [say('dialFailed')],
+        next: 'askDestination',
       },
 
       tooManyRetries: {
