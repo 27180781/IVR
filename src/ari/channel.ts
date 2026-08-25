@@ -33,17 +33,54 @@ export class CallChannel {
   private ended = false;
   private readonly endListeners = new Set<() => void>();
 
+  /**
+   * Digits received but not yet consumed.
+   *
+   * Callers who know the menu type ahead - the choice and the reference in one
+   * run - and a keypress that lands between two prompts must not be thrown
+   * away. Without this buffer, "100003" arrives as "00003": the menu consumed
+   * the choice, and the reference's first digit fell into the gap before the
+   * next prompt started listening. The caller then hears that their perfectly
+   * correct entry was invalid.
+   *
+   * So DTMF is captured continuously for the life of the channel, and each
+   * gather consumes from here rather than starting deaf.
+   */
+  private readonly pendingDigits: string[] = [];
+  /** Notified on every keypress; observers look, only gather() consumes. */
+  private readonly digitObservers = new Set<() => void>();
+
   constructor(
     private readonly ari: Client,
     readonly channel: Channel,
     readonly log: CallLogger,
     private readonly language: string,
   ) {
+    this.channel.on('ChannelDtmfReceived', (event: DtmfEvent) => {
+      this.pendingDigits.push(event.digit);
+      for (const observe of [...this.digitObservers]) observe();
+    });
+
     this.channel.once('StasisEnd', () => {
       this.ended = true;
       for (const listener of this.endListeners) listener();
       this.endListeners.clear();
     });
+  }
+
+  private observeDigits(observer: () => void): () => void {
+    this.digitObservers.add(observer);
+    return () => this.digitObservers.delete(observer);
+  }
+
+  /**
+   * Drop anything typed but not yet consumed.
+   *
+   * Used after a rejected entry: the caller is about to be asked again, and
+   * replaying the keys that just failed would fail identically.
+   */
+  clearPendingDigits(): void {
+    this.pendingDigits.length = 0;
   }
 
   get id(): string {
@@ -117,14 +154,21 @@ export class CallChannel {
       cleanupFns.push(this.onEnd(() => finish('hangup')));
 
       if (opts.bargeIn) {
-        const onDtmf = () => {
+        // Observe rather than consume: the digit that interrupts a prompt is
+        // usually the answer to it, and belongs to the gather that follows.
+        const interrupt = () => {
+          if (this.pendingDigits.length === 0) return;
           playback.stop().catch(() => {
             /* already finished */
           });
           finish('interrupted');
         };
-        this.channel.once('ChannelDtmfReceived', onDtmf);
-        cleanupFns.push(() => this.channel.removeListener('ChannelDtmfReceived', onDtmf));
+        cleanupFns.push(this.observeDigits(interrupt));
+        // The caller may already have typed ahead before this prompt began.
+        if (this.pendingDigits.length > 0) {
+          finish('interrupted');
+          return;
+        }
       }
 
       this.channel
@@ -177,26 +221,32 @@ export class CallChannel {
         timer = setTimeout(() => finish('timeout'), ms);
       };
 
-      const onDtmf = (event: DtmfEvent) => {
-        if (settled) return;
-        if (timer) clearTimeout(timer);
+      const consume = () => {
+        while (!settled && this.pendingDigits.length > 0) {
+          const digit = this.pendingDigits.shift() as string;
+          if (timer) clearTimeout(timer);
 
-        if (terminator !== null && event.digit === terminator) {
-          finish('terminator');
-          return;
-        }
+          if (terminator !== null && digit === terminator) {
+            finish('terminator');
+            return;
+          }
 
-        digits += event.digit;
-        if (digits.length >= maxDigits) {
-          finish('maxDigits');
-          return;
+          digits += digit;
+          if (digits.length >= maxDigits) {
+            finish('maxDigits');
+            return;
+          }
+          armTimer(interDigitTimeoutMs);
         }
-        armTimer(interDigitTimeoutMs);
       };
 
-      this.channel.on('ChannelDtmfReceived', onDtmf);
-      cleanupFns.push(() => this.channel.removeListener('ChannelDtmfReceived', onDtmf));
+      cleanupFns.push(this.observeDigits(consume));
       cleanupFns.push(this.onEnd(() => finish('hangup')));
+
+      // Anything typed ahead of this prompt counts. This is the whole point of
+      // the buffer: the caller answered before we finished asking.
+      consume();
+      if (settled) return;
 
       void this.play(media, { bargeIn }).then((outcome) => {
         if (settled) return;

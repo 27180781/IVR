@@ -122,6 +122,7 @@ export class IvrEngine {
             { attempt, digits: result.digits, reason: result.reason },
             'menu input not accepted',
           );
+          call.clearPendingDigits();
           if (retry && attempt < maxAttempts) {
             if ((await call.play(this.resolve(retry, ctx))) === 'hangup') return hungUp;
           }
@@ -154,6 +155,7 @@ export class IvrEngine {
           }
 
           call.log.info({ attempt, digits: result.digits }, 'collected input rejected');
+          call.clearPendingDigits();
           if (state.onInvalid && attempt < maxAttempts) {
             if ((await call.play(this.resolve(state.onInvalid, ctx))) === 'hangup') return hungUp;
           }
