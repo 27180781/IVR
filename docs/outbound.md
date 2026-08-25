@@ -48,7 +48,11 @@ TWILIO_TERMINATION_DOMAIN=your-trunk.pstn.twilio.com
 sudo ./scripts/deploy-asterisk.sh
 ```
 
-ב‑`.env`:
+ב‑`.env` — אם הקובץ נוצר לפני שהתכונה נוספה, המפתחות פשוט לא שם:
+```bash
+sudo ./scripts/sync-env.sh    # מוסיף הגדרות חדשות, לא נוגע בקיימות
+```
+ואז:
 ```bash
 OUTBOUND_ENABLED=true
 OUTBOUND_PIN=4821                  # 4-12 ספרות

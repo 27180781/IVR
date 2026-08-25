@@ -238,7 +238,9 @@ EOF
 fi
 
 if [[ -f "${APP_ENV}" ]]; then
-  info ".env exists, leaving it alone"
+  info ".env exists, keeping its values"
+  # Settings added since this file was written are otherwise invisible here.
+  "${REPO_ROOT}/scripts/sync-env.sh" || true
 else
   # A generated dashboard password means the dashboard works out of the box
   # instead of silently refusing to start, without ever defaulting to
