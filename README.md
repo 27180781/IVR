@@ -1,5 +1,16 @@
 # IVR
 
+**A Hebrew voice-response system on Asterisk, answering a Twilio number.**
+Menu, reference lookup against your own backend, spoken result, and a live
+browser dashboard. Everything — prompts, language, menu, data source — is
+configurable.
+
+**Setting this up on your own server? → [Self-hosting guide](docs/self-hosting.md)**
+
+*The documentation below is in Hebrew; the self-hosting guide is in English.*
+
+---
+
 מערכת מענה קולי מבוססת Asterisk, שמקבלת שיחות מקו Twilio דרך
 Elastic SIP Trunking. כל לוגיקת השיחה חיה בריפו הזה כאפליקציית
 TypeScript שמדברת עם אסטריסק דרך ARI.
@@ -21,6 +32,7 @@ TypeScript שמדברת עם אסטריסק דרך ARI.
 | [`docs/architecture.md`](docs/architecture.md) | איך זה עובד, ולמה כל רכיב נמצא שם |
 | [`docs/deployment.md`](docs/deployment.md) | פריסה על דרופלט, ופריסות אוטומטיות מגיטהאב |
 | [`docs/dashboard.md`](docs/dashboard.md) | לוח בקרה בדפדפן: חיבור דומיין, HTTPS ואבטחה |
+| [`docs/self-hosting.md`](docs/self-hosting.md) | **Self-hosting guide (English)** — להקמה על שרת אחר |
 | [`docs/server-setup.md`](docs/server-setup.md) | הקמת השרת ידנית, צעד־צעד |
 | [`docs/twilio-setup.md`](docs/twilio-setup.md) | הגדרת הטראנק והמספר |
 
