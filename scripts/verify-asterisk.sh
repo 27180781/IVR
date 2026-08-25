@@ -36,6 +36,27 @@ fi
 asterisk -rx 'pjsip show identifies' 2>/dev/null | sed 's/^/    /'
 
 echo
+# Two SIP stacks cannot share a port. If chan_sip is running it may hold 5060,
+# and then every pjsip setting below is correct and simultaneously irrelevant -
+# inbound calls never reach the context this project configures.
+echo "SIP stack"
+CHAN_SIP=$(asterisk -rx 'module show like chan_sip' 2>/dev/null)
+if echo "${CHAN_SIP}" | grep -q 'chan_sip.so'; then
+  fail "chan_sip.so is loaded - it competes with res_pjsip for UDP 5060"
+  echo "      inbound calls will be rejected in context 'public'. Fix with:"
+  echo "      sudo ./scripts/deploy-asterisk.sh && sudo systemctl restart asterisk"
+else
+  pass "chan_sip is not loaded - res_pjsip owns SIP"
+fi
+
+TRANSPORT=$(asterisk -rx 'pjsip show transports' 2>/dev/null)
+if echo "${TRANSPORT}" | grep -q '5060'; then
+  pass "pjsip transport is configured on 5060"
+else
+  fail "no pjsip transport on 5060"
+fi
+
+echo
 echo "Dialplan"
 DIALPLAN=$(asterisk -rx 'dialplan show from-twilio' 2>/dev/null)
 if [[ -z "${DIALPLAN}" ]]; then

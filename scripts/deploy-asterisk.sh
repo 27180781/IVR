@@ -52,7 +52,7 @@ if ! getent group "${ASTERISK_GROUP}" >/dev/null; then
   exit 1
 fi
 
-for file in pjsip.conf extensions.conf http.conf ari.conf rtp.conf logger.conf; do
+for file in modules.conf pjsip.conf extensions.conf http.conf ari.conf rtp.conf logger.conf; do
   src="${SRC_DIR}/${file}"
   dst="${DST_DIR}/${file}"
   [[ -f "${dst}" ]] && cp -a "${dst}" "${BACKUP_DIR}/${file}"
@@ -73,6 +73,16 @@ if command -v asterisk >/dev/null 2>&1 && asterisk -rx 'core show version' >/dev
   asterisk -rx 'module reload res_pjsip.so'
   asterisk -rx 'dialplan reload'
   asterisk -rx 'module reload res_rtp_asterisk.so'
+
+  # chan_sip and res_pjsip both want UDP 5060, and whichever loaded first has
+  # it. modules.conf stops chan_sip loading in future, but a module that is
+  # already running has to be unloaded now - and if it holds the port, pjsip
+  # cannot bind until it lets go.
+  if asterisk -rx 'module show like chan_sip' | grep -q 'chan_sip.so'; then
+    echo "unloading chan_sip.so - it competes with res_pjsip for port 5060"
+    asterisk -rx 'module unload chan_sip.so' || true
+    asterisk -rx 'module reload res_pjsip.so' >/dev/null || true
+  fi
 
   # http.conf drives the built-in HTTP server, which is the transport ARI runs
   # over. Reloading pjsip and ari without it leaves the server on whatever it
