@@ -12,8 +12,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DOMAIN="${1:-}"
+# DNS is case-insensitive but Caddy, certificates and logs all read better
+# lowercase, so normalise rather than carrying whatever was typed.
+DOMAIN="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
 EMAIL="${LETSENCRYPT_EMAIL:-}"
+SKIP_DNS_CHECK="${SKIP_DNS_CHECK:-0}"
 
 step() { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$1"; }
 info() { printf '    %s\n' "$1"; }
@@ -33,6 +36,25 @@ SERVER_IP="$(curl -s --max-time 3 \
 [[ "${SERVER_IP}" =~ ^[0-9.]+$ ]] || \
   SERVER_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' || true)"
 
+# Recognise a proxied record, which is a legitimate setup that this check
+# would otherwise reject with a message that explains none of it.
+is_cloudflare() {
+  python3 - "$1" 2>/dev/null <<'PYEOF'
+import ipaddress, sys
+NETS = [
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+    "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+    "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+]
+try:
+    ip = ipaddress.ip_address(sys.argv[1])
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if any(ip in ipaddress.ip_network(n) for n in NETS) else 1)
+PYEOF
+}
+
 RESOLVED="$(dig +short A "${DOMAIN}" | tail -1)"
 info "${DOMAIN} resolves to: ${RESOLVED:-<nothing>}"
 info "this server is:        ${SERVER_IP:-<unknown>}"
@@ -42,11 +64,37 @@ if [[ -z "${RESOLVED}" ]]; then
        and wait for it to propagate, then run this again."
 fi
 if [[ -n "${SERVER_IP}" && "${RESOLVED}" != "${SERVER_IP}" ]]; then
-  die "${DOMAIN} points at ${RESOLVED}, not at this server (${SERVER_IP}).
+  if (( SKIP_DNS_CHECK )); then
+    warn "${DOMAIN} points at ${RESOLVED}, not ${SERVER_IP} - continuing anyway"
+  elif is_cloudflare "${RESOLVED}"; then
+    die "${DOMAIN} resolves to ${RESOLVED}, which is Cloudflare, not this
+       server (${SERVER_IP}). The DNS record exists but is proxied - the
+       orange cloud in the Cloudflare dashboard.
+
+       Two ways forward:
+
+       1. Turn the proxy off (click the orange cloud so it goes grey).
+          The record then points straight here, Caddy gets its own
+          certificate, and TLS runs end to end. Simplest, and the one to
+          pick unless you specifically want Cloudflare in front.
+
+       2. Keep the proxy on. Set SSL/TLS mode to Full (strict) in
+          Cloudflare, make sure port 80 stays open so the certificate can
+          be issued through it, and re-run with:
+
+            SKIP_DNS_CHECK=1 sudo $0 ${DOMAIN}
+
+          Note that a proxy may buffer the live feed, so the dashboard can
+          update in bursts rather than instantly."
+  else
+    die "${DOMAIN} points at ${RESOLVED}, not at this server (${SERVER_IP}).
        Let's Encrypt validates by connecting to that address, so the
-       certificate would fail. Fix the A record and run this again."
+       certificate would fail. Fix the A record and run this again.
+       To override: SKIP_DNS_CHECK=1 sudo $0 ${DOMAIN}"
+  fi
+else
+  info "DNS is correct"
 fi
-info "DNS is correct"
 
 #-----------------------------------------------------------------------------
 step "Dashboard password"
