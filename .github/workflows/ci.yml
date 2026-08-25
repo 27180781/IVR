@@ -24,10 +24,43 @@ jobs:
       - name: Build
         run: npm run build
 
-      # The flow validator runs at import time, so this fails the build on a
-      # transition that points at a state which does not exist.
       - name: Validate call flow
-        run: node -e "import('./dist/ivr/flows/main.js').then(m => { const f = m.createMainFlow({ name: 'ci', lookupOrder: async () => null }); console.log('flow ok:', Object.keys(f.states).length, 'states'); })"
+        # The flow validator runs at import time, so this fails the build on a
+        # transition pointing at a state that does not exist - which would
+        # otherwise surface as dead air on a live call.
+        run: |
+          node -e '
+            import("./dist/ivr/flows/main.js").then((m) => {
+              const flow = m.createMainFlow({
+                name: "ci",
+                lookupOrder: async () => null,
+              });
+              console.log("flow ok:", Object.keys(flow.states).length, "states");
+            });
+          '
 
       - name: Shell scripts parse
-        run: for f in scripts/*.sh; do bash -n "$f" || exit 1; done
+        run: |
+          for f in scripts/*.sh; do
+            bash -n "$f" || exit 1
+          done
+          echo "all scripts parse"
+
+      - name: Workflows parse
+        # A malformed workflow file does not fail loudly - GitHub declines to
+        # start the run at all, which reads as "CI failed" with no job and no
+        # log to explain it. Catch it here instead.
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+          python3 - <<'EOF'
+          import sys, yaml, pathlib
+          ok = True
+          for path in pathlib.Path(".github/workflows").glob("*.yml"):
+              try:
+                  yaml.safe_load(path.read_text())
+                  print(f"{path}: ok")
+              except Exception as exc:
+                  ok = False
+                  print(f"{path}: INVALID\n  {exc}")
+          sys.exit(0 if ok else 1)
+          EOF

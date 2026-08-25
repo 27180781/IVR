@@ -31,21 +31,44 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
     steps:
+      - name: Is deployment configured?
+        id: cfg
+        # Until the secrets exist there is nothing to deploy to. Failing the
+        # job in that state emails the owner on every single push about a
+        # deployment they never set up, which trains them to ignore the one
+        # message that will matter later. Skip cleanly instead; this starts
+        # working by itself the moment the secrets are added.
+        run: |
+          if [ -z "${DEPLOY_HOST}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Deploy secrets are not configured - skipping deployment."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.cfg.outputs.configured == 'true'
 
       - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.configured == 'true'
         with:
           node-version: 22
           cache: npm
 
       # Fail here rather than on the server. A build that breaks in CI must
       # never get as far as restarting the service that answers the phone.
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
+      - if: steps.cfg.outputs.configured == 'true'
+        run: npm ci
+      - if: steps.cfg.outputs.configured == 'true'
+        run: npm run typecheck
+      - if: steps.cfg.outputs.configured == 'true'
+        run: npm run build
 
       - name: Configure SSH
+        if: steps.cfg.outputs.configured == 'true'
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
@@ -53,12 +76,13 @@ jobs:
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Deploy
+        if: steps.cfg.outputs.configured == 'true'
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
-          USER: ${{ secrets.DEPLOY_USER }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
           PATH_ON_SERVER: ${{ secrets.DEPLOY_PATH }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "${USER}@${HOST}" \
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "${SSH_USER}@${HOST}" \
             "sudo ${PATH_ON_SERVER:-/opt/ivr}/scripts/deploy.sh"
 
       - name: Clean up the key
