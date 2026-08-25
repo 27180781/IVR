@@ -181,12 +181,27 @@ if command -v ufw >/dev/null; then
 fi
 
 #-----------------------------------------------------------------------------
+step "Building the application"
+#-----------------------------------------------------------------------------
+# git pull updates src/; dist/ is what actually runs. Without this the service
+# restarts into the previous build - which, the first time the dashboard is
+# set up, is a build that has no dashboard in it at all. Caddy then answers
+# 502 while every step here reports success.
+cd "${REPO_ROOT}"
+if [[ -f package-lock.json ]]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+npm run build
+chown -R root:root "${REPO_ROOT}"
+chown -R ivr:ivr "${REPO_ROOT}/data" 2>/dev/null || true
+chown "root:ivr" "${APP_ENV}" 2>/dev/null || true
+chmod 640 "${APP_ENV}"
+info "build ok"
+
+#-----------------------------------------------------------------------------
 step "Starting"
 #-----------------------------------------------------------------------------
 systemctl enable caddy >/dev/null 2>&1 || true
 systemctl reload caddy 2>/dev/null || systemctl restart caddy
 systemctl restart ivr-app
-sleep 3
 
 if systemctl is-active --quiet caddy; then
   info "caddy is running"
@@ -194,6 +209,29 @@ else
   journalctl -u caddy -n 20 --no-pager
   die "caddy did not start"
 fi
+
+#-----------------------------------------------------------------------------
+step "Checking the dashboard is actually being served"
+#-----------------------------------------------------------------------------
+# "caddy is running" says nothing about whether it has anything to proxy to.
+# Check the upstream directly: a 401 means the dashboard is up and asking for
+# credentials, which is exactly right.
+UPSTREAM="http://127.0.0.1:${WEB_PORT}/"
+STATUS=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  STATUS="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "${UPSTREAM}" || true)"
+  [[ "${STATUS}" == "401" ]] && break
+  sleep 1
+done
+
+if [[ "${STATUS}" != "401" ]]; then
+  echo
+  journalctl -u ivr-app -n 30 --no-pager | sed 's/^/    /'
+  die "the dashboard is not answering on ${UPSTREAM} (got '${STATUS:-no response}').
+       Caddy will return 502 until it is. The log above should say why -
+       a missing WEB_PASSWORD makes it refuse to start on purpose."
+fi
+info "dashboard responds with 401 - up and requiring credentials"
 
 cat <<EOF
 

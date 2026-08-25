@@ -111,6 +111,18 @@ systemctl restart "${SERVICE}"
 if healthy; then
   echo
   echo "deployed $(git rev-parse --short HEAD) successfully - ${ARI_APP} is registered"
+
+  # Not fatal: a dashboard that is down does not stop calls being answered,
+  # and rolling back a good telephony deploy over it would be the wrong trade.
+  # But it should not pass silently either.
+  WEB_PORT_CFG="$(grep -E '^WEB_PORT=' .env 2>/dev/null | cut -d= -f2- || true)"
+  WEB_STATUS="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+    "http://127.0.0.1:${WEB_PORT_CFG:-3000}/" || true)"
+  if [[ "${WEB_STATUS}" == "401" ]]; then
+    echo "dashboard is up"
+  else
+    echo "warning: dashboard not answering (got '${WEB_STATUS:-no response}') - calls are unaffected" >&2
+  fi
   exit 0
 fi
 
